@@ -165,6 +165,8 @@ export default class Transactions {
     // Since decode wasn't requested, caller expects b64url encoded data.
     return ArweaveUtils.bufferTob64Url(data);
   }
+/////
+
 
   public async sign(
     transaction: Transaction,
@@ -293,6 +295,66 @@ export default class Transactions {
     };
   }
 
+  public async dispatch(transaction: Transaction, jwk?: JWKInterface | "use_wallet"): Promise<{
+    status: "OK" | "INSUFFICIENT_FUNDS" | "NO_WALLET" | "ERROR";
+    message?: string;
+    type?: "BASE" | "BUNDLED";
+  }> {
+    if (!jwk && (typeof window === "undefined" || !window.arweaveWallet)) {
+      // No ArConnect nor JWK
+      return {
+        status: "NO_WALLET"
+      };
+    } else if (!jwk || "use_wallet") {
+      // NOTE: ADD "use_wallet" CASE IF SW + BUNDLES BECOMES AVAILABLE
+      // Move through the browser Arweave Wallet
+      try {
+        return await window.arweaveWallet.dispatch(transaction);
+      } catch {
+        return this.defaultDispatch(transaction, "use_wallet");
+      }
+    } else {
+      // Default dispatch
+      return this.defaultDispatch(transaction, jwk);
+  }
+}
+
+  public async defaultDispatch(transaction: Transaction, jwk?: JWKInterface | "use_wallet"): Promise<{
+    status: "OK" | "INSUFFICIENT_FUNDS" | "NO_WALLET" | "ERROR";
+    message?: string;
+    type?: "BASE" | "BUNDLED";
+  }> {
+    await this.sign(transaction, jwk);
+    let res = await this.post(transaction);
+
+    let status: "OK" | "INSUFFICIENT_FUNDS" | "NO_WALLET" | "ERROR", message;
+
+    switch (res.status) {
+      case 200:
+      case 208:
+        status = "OK";
+        break;
+      default:
+        status = "ERROR";
+        message = res.statusText;
+    }
+
+    if (message) {
+      return {
+        status,
+        message,
+        type: "BASE"
+      }  
+    } else {
+      return {
+        status,
+        type: "BASE"
+      }
+    }
+  }
+  }
+
+  
   /**
    * Gets an uploader than can be used to upload a transaction chunk by chunk, giving progress
    * and the ability to resume.
